@@ -8,8 +8,8 @@ defmodule Chlorine.Application do
   @impl true
   def start(_type, _args) do
     children = [
-      # Starts a worker by calling: Chlorine.Worker.start_link(arg)
-      # {Chlorine.Worker, arg}
+      {Chlorine.Entity.Storage, []},
+      {Chlorine.Component.Storage, []}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
