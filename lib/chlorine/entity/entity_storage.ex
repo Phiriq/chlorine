@@ -28,6 +28,10 @@ defmodule Chlorine.Entity.Storage do
     end
   end
 
+  def has_entity?(entity_id) do
+    not is_nil(get(entity_id))
+  end
+
   def remove(entity_id) when is_integer(entity_id) do
     entity_id
     |> get()
@@ -59,7 +63,7 @@ defmodule Chlorine.Entity.Storage do
       |> get_components()
       |> Enum.map(&Component.Storage.get/1)
 
-    %{
+    %Entity{
       id: entity_id,
       components: components
     }

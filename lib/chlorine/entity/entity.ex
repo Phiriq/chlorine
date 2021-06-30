@@ -4,6 +4,7 @@ defmodule Chlorine.Entity do
   """
 
   alias Chlorine.{Component, ID}
+  alias Chlorine.Entity.Storage
 
   @type id :: ID.id()
 
@@ -23,7 +24,10 @@ defmodule Chlorine.Entity do
       import Chlorine.Entity, only: [component: 1]
 
       def new(opts \\ []) do
-        opts = List.wrap(opts)
+        opts =
+          opts
+          |> List.wrap()
+          |> Enum.map(&Chlorine.Entity.to_component_struct/1)
 
         # TODO: Maybe find a better way of doing this
         components =
@@ -78,6 +82,8 @@ defmodule Chlorine.Entity do
     end
   end
 
+  # TODO: Make this return the chlorine Component type of struct
+  # TODO: Move some things to an internal Utils module
   def component(component) when is_atom(component) do
     %{id: ID.get(), data: struct!(component)}
   end
@@ -86,26 +92,56 @@ defmodule Chlorine.Entity do
     %{id: ID.get(), data: component}
   end
 
-  defdelegate remove(entity_id), to: Chlorine.Entity.Storage
-
   # TODO: Add typespecs
 
-  def remove_component(entity, module_to_remove) do
-    Chlorine.Entity.Storage.remove_component(entity.id, module_to_remove)
+  def remove_component!(entity, module_to_remove) do
+    :ok = Storage.remove_component(entity.id, module_to_remove)
     get(entity.id)
   end
 
-  def add_component(entity_id, comp) do
-    %{id: id, data: _data} = component(comp)
+  def remove_component(entity, comp) when is_struct(entity) do
+    remove_component(entity.id, comp)
+  end
 
+  def remove_component(entity_id, module_to_remove) do
+    if Storage.has_entity?(entity_id) do
+      :ok = Storage.remove_component(entity_id, module_to_remove)
+      {:ok, get(entity_id)}
+    else
+      {:error, :entity_not_found}
+    end
+  end
+
+  def add_component(entity, comp) when is_struct(entity) do
+    add_component(entity.id, comp)
+  end
+
+  def add_component(entity_id, comp) when is_integer(entity_id) do
+    %{id: id, data: data} = component(comp)
+    component_id = to_component_id(comp, id)
+
+    # TODO: Make a macro or function for this kind of things
+    if Storage.has_entity?(entity_id) do
+      :ok = Chlorine.Entity.Storage.add_component(entity_id, component_id)
+      :ok = Component.Storage.put(component_id, data)
+      {:ok, get(entity_id)}
+    else
+      {:error, :entity_not_found}
+    end
+  end
+
+  def add_component!(entity_id, comp) do
+    %{id: id, data: data} = component(comp)
     component_id = to_component_id(comp, id)
     :ok = Chlorine.Entity.Storage.add_component(entity_id, component_id)
+    :ok = Component.Storage.put(component_id, data)
 
     get(entity_id)
   end
 
-  defdelegate load(entity_id), to: Chlorine.Entity.Storage
-  defdelegate get(entity_id), to: Chlorine.Entity.Storage
+  defdelegate load(entity_id), to: Storage
+  defdelegate get(entity_id), to: Storage
+  defdelegate remove(entity_id), to: Storage
 
   @spec has_component?(atom | %{:components => any, optional(any) => any}, any) :: boolean
   def has_component?(entity, component_module) do
@@ -121,6 +157,16 @@ defmodule Chlorine.Entity do
     |> List.first()
   end
 
+  def to_component_struct(component) when is_atom(component) do
+    struct!(component)
+  end
+
+  def to_component_struct(component) when is_struct(component), do: component
+
+  def to_component_struct(_component) do
+    raise(Chlorine.InvalidComponentException)
+  end
+
   defp to_component_id(component, id) when is_atom(component) do
     {component, id}
   end
@@ -128,10 +174,4 @@ defmodule Chlorine.Entity do
   defp to_component_id(component, id) when is_struct(component) do
     {component.__struct__, id}
   end
-
-  def to_component_struct(component) when is_atom(component) do
-    struct!(component)
-  end
-
-  def to_component_struct(component) when is_struct(component), do: component
 end
