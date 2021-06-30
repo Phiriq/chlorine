@@ -15,10 +15,31 @@ defmodule Chlorine.Entity.Storage do
   end
 
   def get(entity_id) do
-    %{
-      id: entity_id,
-      components: get_components(entity_id)
-    }
+    # Valid entities should not have their components as nil
+    case get_components(entity_id) do
+      nil ->
+        nil
+
+      components ->
+        %Chlorine.Entity{
+          id: entity_id,
+          components: components
+        }
+    end
+  end
+
+  def remove(entity_id) when is_integer(entity_id) do
+    entity_id
+    |> get()
+    |> remove()
+  end
+
+  def remove(entity) when is_struct(entity) do
+    Enum.each(entity.components, fn {mod, _id} ->
+      remove_component(entity.id, mod)
+    end)
+
+    Agent.update(__MODULE__, &Map.delete(&1, entity.id))
   end
 
   @spec add_component(Entity.id(), Component.id()) :: :ok

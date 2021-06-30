@@ -3,11 +3,18 @@ defmodule Chlorine.Entity do
 
   """
 
-  alias Chlorine.Component
+  alias Chlorine.{Component, ID}
 
-  @type id :: Chlorine.ID.id()
-  # TODO
-  @type t :: none()
+  @type id :: ID.id()
+
+  @type t :: %__MODULE__{
+          id: id(),
+          components: list(Component.id())
+        }
+
+  defstruct [:id, :components]
+
+  @callback components() :: list(Component.data() | atom())
 
   defmacro __using__(_value) do
     quote do
@@ -15,23 +22,45 @@ defmodule Chlorine.Entity do
 
       import Chlorine.Entity, only: [component: 1]
 
-      def new() do
-        components =
-          __MODULE__.components()
-          |> Enum.map(&unquote(__MODULE__).component/1)
+      def new(opts \\ []) do
+        opts = List.wrap(opts)
 
-        components_formatted = Enum.map(components, &{&1.data.__struct__, &1.id})
+        # TODO: Maybe find a better way of doing this
+        components =
+          case opts do
+            [] ->
+              components()
+              |> Enum.map(&Chlorine.Entity.to_component_struct/1)
+
+            other ->
+              components()
+              |> Enum.map(&Chlorine.Entity.to_component_struct/1)
+              |> Enum.map(&Chlorine.Entity.merge_structs(opts, &1))
+              |> then(fn x ->
+                x ++ Enum.filter(opts, fn x -> x not in components() end)
+              end)
+          end
+          |> Enum.map(&Chlorine.Entity.component/1)
+
+        components_formatted =
+          Enum.map(
+            components,
+            &{&1.data.__struct__, &1.id}
+          )
+
         id = Chlorine.ID.get()
 
         # Add components to the storage
         components_formatted
         |> Enum.zip(components)
-        |> Enum.each(fn {a, b} -> Chlorine.Component.Storage.put(a, b.data) end)
+        |> Enum.each(fn {a, b} ->
+          Chlorine.Component.Storage.put(a, b.data)
+        end)
 
         # Add entity to storage, linking its components
         Chlorine.Entity.Storage.add(id, components_formatted)
 
-        components = %Chlorine.Entity{
+        %Chlorine.Entity{
           id: id,
           components: components_formatted
         }
@@ -39,17 +68,27 @@ defmodule Chlorine.Entity do
     end
   end
 
-  defstruct [:id, :components]
+  def merge_structs(opts, component) do
+    res = Enum.find(opts, fn y -> component.__struct__ == y.__struct__ end)
 
-  @callback components() :: list(Component.data() | atom())
+    unless is_nil(res) do
+      Map.merge(component, res)
+    else
+      component
+    end
+  end
 
   def component(component) when is_atom(component) do
-    %{id: Chlorine.ID.get(), data: struct!(component)}
+    %{id: ID.get(), data: struct!(component)}
   end
 
   def component(component) when is_struct(component) do
-    %{id: Chlorine.ID.get(), data: component}
+    %{id: ID.get(), data: component}
   end
+
+  defdelegate remove(entity_id), to: Chlorine.Entity.Storage
+
+  # TODO: Add typespecs
 
   def remove_component(entity, module_to_remove) do
     Chlorine.Entity.Storage.remove_component(entity.id, module_to_remove)
@@ -65,15 +104,6 @@ defmodule Chlorine.Entity do
     get(entity_id)
   end
 
-  defp to_component_id(component, id) when is_atom(component) do
-    {component, id}
-  end
-
-  defp to_component_id(component, id) when is_struct(component) do
-    {component.__struct__, id}
-  end
-
-  # defdelegate remove_component(entity_id, module_to_remove), to: Chlorine.Entity.Storage
   defdelegate load(entity_id), to: Chlorine.Entity.Storage
   defdelegate get(entity_id), to: Chlorine.Entity.Storage
 
@@ -90,4 +120,18 @@ defmodule Chlorine.Entity do
     |> Enum.filter(fn {mod, _id} -> mod == module end)
     |> List.first()
   end
+
+  defp to_component_id(component, id) when is_atom(component) do
+    {component, id}
+  end
+
+  defp to_component_id(component, id) when is_struct(component) do
+    {component.__struct__, id}
+  end
+
+  def to_component_struct(component) when is_atom(component) do
+    struct!(component)
+  end
+
+  def to_component_struct(component) when is_struct(component), do: component
 end
