@@ -41,45 +41,49 @@ defmodule Chlorine.Component.Storage do
   @impl true
   def handle_call({:get, module, component_id}, _from, buckets) do
     bucket = Map.get(buckets, module)
+    res = if is_nil(bucket), do: nil, else: Bucket.get(bucket, component_id)
 
-    if is_nil(bucket) do
-      {:reply, nil, buckets}
-    else
-      {:reply, Bucket.get(bucket, component_id), buckets}
-    end
+    {:reply, res, buckets}
   end
 
   @impl true
   def handle_call({:get, module}, _from, buckets) do
     bucket = Map.get(buckets, module)
+    res = if is_nil(bucket), do: nil, else: Bucket.get(bucket)
 
-    if is_nil(bucket) do
-      {:reply, nil, buckets}
-    else
-      {:reply, Bucket.get(bucket), buckets}
-    end
+    {:reply, res, buckets}
   end
 
   @impl true
   def handle_call({:put, module, component_id, value}, _from, buckets) do
     bucket = Map.get(buckets, module)
 
-    if is_nil(bucket) do
-      {:ok, bucket} = Bucket.start_link([])
-      Bucket.put(bucket, component_id, value)
-      new_buckets = Map.put(buckets, module, bucket)
+    res =
+      if is_nil(bucket) do
+        # If a bucket for this module doesn't exist, create it
+        {:ok, bucket} = Bucket.start_link([])
+        :ok = Bucket.put(bucket, component_id, value)
+        Map.put(buckets, module, bucket)
+      else
+        # Otherwise just put the component into the bucket
+        :ok = Bucket.put(bucket, component_id, value)
+        buckets
+      end
 
-      {:reply, :ok, new_buckets}
-    else
-      Bucket.put(bucket, component_id, value)
-      {:reply, :ok, buckets}
-    end
+    {:reply, :ok, res}
   end
 
   @impl true
   def handle_call({:delete, module, component_id}, _from, buckets) do
     bucket = Map.get(buckets, module)
-    Bucket.delete(bucket, component_id)
-    {:reply, :ok, buckets}
+
+    res =
+      unless is_nil(bucket) do
+        :ok = Bucket.delete(bucket, component_id)
+      else
+        {:error, :component_not_found}
+      end
+
+    {:reply, res, buckets}
   end
 end

@@ -3,8 +3,9 @@ defmodule Chlorine.Entity.Storage do
   use Agent
 
   alias Chlorine.{Component, Entity}
+  require Entity
 
-  # TODO: opts
+  @spec start_link(any()) :: {:error, any()} | {:ok, pid()}
   def start_link(_opts) do
     Agent.start_link(fn -> %{} end, name: __MODULE__)
   end
@@ -14,40 +15,42 @@ defmodule Chlorine.Entity.Storage do
     Agent.update(__MODULE__, &Map.put(&1, entity_id, entity_components))
   end
 
+  @spec get(Entity.id()) :: {:ok, Entity.t()} | Entity.not_found()
   def get(entity_id) do
     # Valid entities should not have their components as nil
     case get_components(entity_id) do
       nil ->
-        nil
+        {:error, :entity_not_found}
 
       components ->
-        %Chlorine.Entity{
+        entity = %Chlorine.Entity{
           id: entity_id,
           components: components
         }
+
+        {:ok, entity}
     end
   end
 
-  def has_entity?(entity_id) do
-    not is_nil(get(entity_id))
+  def has_entity?(id) when Entity.is_id(id) do
+    get(id) |> do_has_entity?()
   end
 
-  def remove(entity_id) when is_integer(entity_id) do
-    entity_id
-    |> get()
-    |> remove()
+  defp do_has_entity?({:error, :entity_not_found}), do: false
+  defp do_has_entity?({:ok, _entity}), do: true
+
+  @spec remove(Entity.id()) :: :ok | Entity.not_found()
+  def remove(entity_id) when Entity.is_id(entity_id) do
+    with {:ok, entity} <- get(entity_id),
+         :ok <-
+           Enum.each(entity.components, fn {mod, _id} ->
+             remove_component!(entity.id, mod)
+           end),
+         do: Agent.update(__MODULE__, &Map.delete(&1, entity_id))
   end
 
-  def remove(entity) when is_struct(entity) do
-    Enum.each(entity.components, fn {mod, _id} ->
-      remove_component(entity.id, mod)
-    end)
-
-    Agent.update(__MODULE__, &Map.delete(&1, entity.id))
-  end
-
-  @spec add_component(Entity.id(), Component.id()) :: :ok
-  def add_component(entity_id, component_id) do
+  @spec add_component!(Entity.id(), Component.id()) :: :ok
+  def add_component!(entity_id, component_id) do
     entity_components = get_components(entity_id)
 
     Agent.update(
@@ -56,8 +59,24 @@ defmodule Chlorine.Entity.Storage do
     )
   end
 
-  # TODO: Handle cases where ID don't belong to an entity
-  def load(entity_id) do
+  @spec get_component(Entity.id(), module()) ::
+          {:ok, Component.id()}
+          | Entity.not_found()
+  def get_component(id, module) when Entity.is_id(id) do
+    if has_entity?(id) do
+      res =
+        get_components(id)
+        |> Enum.filter(fn {mod, _id} -> mod == module end)
+        |> List.first()
+
+      {:ok, res}
+    else
+      {:error, :entity_not_found}
+    end
+  end
+
+  @spec load!(Entity.id()) :: Chlorine.Entity.t()
+  def load!(entity_id) do
     components =
       entity_id
       |> get_components()
@@ -69,33 +88,29 @@ defmodule Chlorine.Entity.Storage do
     }
   end
 
-  @spec remove_component(Entity.id(), module()) :: :ok
-  def remove_component(entity_id, module_to_remove) do
+  @spec remove_component!(Entity.id(), module()) :: :ok
+  def remove_component!(entity_id, module_to_remove) do
     entity_components = get_components(entity_id)
 
-    # TODO: Document exactly how this work to have it as a reference.
-    # TODO: Write tests for failure cases of what we already have.
     new_components =
-      Enum.reject(
+      Enum.filter(
         entity_components,
-        fn {module, id} ->
+        fn {module, _id} = id ->
           if module == module_to_remove do
-            :ok = Component.Storage.delete({module, id})
-            true
-          else
+            :ok = Component.Storage.delete(id)
             false
+          else
+            true
           end
         end
       )
 
-    Agent.update(
-      __MODULE__,
-      &%{&1 | entity_id => new_components}
-    )
+    Agent.update(__MODULE__, &%{&1 | entity_id => new_components})
   end
 
   @spec get_components(Entity.id()) :: list(Component.id())
   def get_components(entity_id) do
+    # TODO: Maybe this is being overcalled
     Agent.get(__MODULE__, &Map.get(&1, entity_id))
   end
 end

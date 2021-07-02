@@ -2,7 +2,6 @@ defmodule Chlorine.ComponentTest do
   use ExUnit.Case, async: true
 
   alias Chlorine.Component
-  import Chlorine.Entity
 
   defmodule TestComponent do
     use Component
@@ -11,7 +10,7 @@ defmodule Chlorine.ComponentTest do
   end
 
   setup do
-    component = component(%TestComponent{})
+    component = Component.build(%TestComponent{})
     %{c: component}
   end
 

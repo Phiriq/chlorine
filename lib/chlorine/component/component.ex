@@ -3,8 +3,14 @@ defmodule Chlorine.Component do
 
   """
 
-  @type id :: {module(), Chlorine.ID.id()}
+  alias Chlorine.ID
+
+  @type id :: {module(), ID.id()}
   @type data :: struct()
+  @type t :: %__MODULE__{id: ID.id(), data: struct()}
+  @type not_found() :: {:error, :component_not_found}
+
+  defstruct [:id, :data]
 
   defmacro __using__(_values) do
     quote do
@@ -37,4 +43,14 @@ defmodule Chlorine.Component do
   # defdelegate get(module), to: Chlorine.Component.Storage
   # defdelegate put(component_id, component_value), to: Chlorine.Component.Storage
   # defdelegate delete(component_id), to: Chlorine.Component.Storage
+
+  @doc false
+  @spec build(atom | map) :: t()
+  def build(component) when is_atom(component) do
+    %__MODULE__{id: ID.get(), data: struct!(component)}
+  end
+
+  def build(component) when is_struct(component) do
+    %__MODULE__{id: ID.get(), data: component}
+  end
 end

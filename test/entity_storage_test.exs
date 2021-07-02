@@ -7,7 +7,6 @@ defmodule Chlorine.EntityStorageTest do
   @components [{Foo, 1000}, {Bar, 10}]
   @other_component {Test, 23}
 
-  # @components1 =
   test "can add entities in the storage" do
     data = 234_234
     Storage.add(data, [{Foo, 234}])
@@ -31,16 +30,8 @@ defmodule Chlorine.EntityStorageTest do
     new_component = {Baz, 1200}
 
     Storage.add(id, @components)
-    Storage.add_component(id, new_component)
+    Storage.add_component!(id, new_component)
     assert Storage.get_components(id) == [new_component | @components]
-  end
-
-  test "can remove components from existing entities" do
-    id = ID.get()
-
-    Storage.add(id, @components)
-    # Storage.remove_component(id, Foo)
-    # assert Storage.get_components(id) == [{Bar, 10}]
   end
 
   test "returns nil if the key is not found" do
